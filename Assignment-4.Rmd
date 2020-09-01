@@ -1,0 +1,198 @@
+---
+title: "Machine-Learning-Assignment Project-Week-4"
+author: "Student!"
+date: "8/31/2020"
+output: html_document
+---
+Data Loading and Exploratory Analysis
+a) Dataset Overview
+
+## R Markdown
+```{r}
+rm(list = ls())
+getwd()
+```
+
+#b) The Needed libraries are:
+```{r}
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+set.seed(12345)
+```
+
+#The URL.
+```{r}
+urlTrain <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+urlTest <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+```
+
+c) download the datasets
+```{r}
+training_Set <- read.csv(url(urlTrain))
+testing_Set <- read.csv(url(urlTest))
+```
+
+#Create a partition with the training dataset.
+```{r}
+inTrain  <- createDataPartition(training_Set$classe, p = 0.7, list = FALSE)
+Tr_Set <- training_Set[inTrain, ]
+Te_Set  <- training_Set[-inTrain, ]
+dim(Tr_Set)
+```
+
+```{r}
+dim(Te_Set)
+```
+
+Both of the created datasets have 160 variables.  In the process of cleaning the data for the NA, the Close to Zero variance (CZV) variables are removed including the variable ID so that the data is consistent.
+
+# remove variables with Nearly Zero Variance
+```{r}
+CZV <- nearZeroVar(training_Set)
+Tr_Set <- Tr_Set[, -CZV]
+Te_Set  <- Te_Set[, -CZV]
+dim(Tr_Set)
+```
+
+```{r}
+dim(Te_Set)
+```
+
+# remove variables that are mostly NA
+```{r}
+AllNA    <- sapply(Tr_Set, function(x) mean(is.na(x))) > 0.95
+Tr_Set <- Tr_Set[, AllNA==FALSE]
+Te_Set  <- Te_Set[, AllNA==FALSE]
+dim(Tr_Set)
+```
+
+
+```{r}
+dim(Te_Set)
+```
+
+# Remove identification only variables (columns 1 to 5)
+```{r}
+Tr_Set <- Tr_Set[, -(1:5)]
+Te_Set  <- Te_Set[, -(1:5)]
+dim(Tr_Set)
+```
+
+
+```{r}
+dim(Te_Set)
+```
+
+Here, after cleaning process of the data above, the number of variables for the analysis has been reduced to 54 only.  Note above that at the 0.99 level it didn't make any difference in the result.
+
+d) Correlation Analysis
+A correlation among variables is analyzed before proceeding to the modeling procedures as follows.
+
+```{r}
+corMatrix <- cor(Tr_Set[, -54])
+corrplot(corMatrix, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+The highly correlated variables are shown in dark colors in the graph above. To make an evem more compact analysis, a PCA (Principal Components Analysis) could be performed as pre-processing step to the datasets. Nevertheless, as the correlations are quite few, this step will not be applied for this assignment.
+
+IV. Prediction Model Building
+
+Three methods will be applied to model the regressions (in the Train dataset) and the best one (with higher accuracy when applied to the Test dataset) will be used for the quiz predictions. 
+
+The methods are: Random Forests, Decision Tree and Generalized Boosted Model, as described below.
+A Confusion Matrix is plotted at the end of each analysis to better visualize the accuracy of the models.
+
+a) Method: Random Forest
+# model fit
+```{r}
+set.seed(12345)
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modFitRandForest <- train(classe ~ ., data=Tr_Set, method="rf",
+                          trControl=controlRF)
+modFitRandForest$finalModel
+```
+
+
+# Prediction on Test dataset
+
+```{r}
+predictRandForest <- predict(modFitRandForest, newdata = training_Set)
+confMatRandForest <- confusionMatrix(table(predictRandForest, factor(training_Set$classe)))
+confMatRandForest
+```
+
+
+
+# plot matrix results
+```{r}
+plot(confMatRandForest$table, col = confMatRandForest$byClass, 
+     main = paste("RandomForest(x = x, y = y, mtry = param$mtry) - Accuracy =",
+                  round(confMatRandForest$overall['Accuracy'], 5)))
+```
+
+
+b) Method: Decision Trees
+# model fit
+```{r}
+set.seed(12345)
+modFitDecTree <- rpart(classe ~ ., data=Tr_Set, method="class")
+fancyRpartPlot(modFitDecTree)
+```
+
+# prediction on Test dataset
+```{r}
+predictDecTree <- predict(modFitDecTree, newdata = Tr_Set, type="class")
+confMatDecTree <- confusionMatrix(table(predictDecTree, Tr_Set$classe))
+confMatDecTree
+```
+
+# plot matrix results
+```{r}
+plot(confMatDecTree$table, col = confMatDecTree$byClass, 
+     main = paste("Decision Tree - Accuracy =",
+                  round(confMatDecTree$overall['Accuracy'], 4)))
+```
+c) Method: Generalized Boosted Model
+# model fit
+```{r}
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modFitGBM  <- train(classe ~ ., data=Tr_Set, method = "gbm",
+                    trControl = controlGBM, verbose = FALSE)
+modFitGBM$finalModel
+```
+
+# prediction on Test dataset
+```{r}
+predictGBM <- predict(modFitGBM, newdata=Tr_Set)
+confMatGBM <- confusionMatrix(table(predictGBM, Tr_Set$classe))
+confMatGBM
+```
+
+
+# plot matrix results
+```{r}
+plot(confMatGBM$table, col = confMatGBM$byClass, 
+     main = paste("GBM - Accuracy =", round(confMatGBM$overall['Accuracy'], 4)))
+```
+
+
+V. Applying the Selected Model to the Test Data
+The accuracy of the 3 regression modeling methods above are:
+
+Random Forest : 0.99969
+Decision Tree : 0.7385
+GBM : 0.9927
+
+In that case, the Random Forest model will be applied to predict the 20 quiz results (testing dataset) as shown below.
+
+```{r}
+predictTEST <- predict(modFitRandForest, newdata=testing_Set)
+predictTEST
+```
+
